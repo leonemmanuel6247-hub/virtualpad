@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "VirtualPad",
+    "slug": "virtualpad",
+    "version": "0.1.0",
+    "orientation": "landscape",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.example.virtualpad",
+      "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]
+    }
+  }
+}
