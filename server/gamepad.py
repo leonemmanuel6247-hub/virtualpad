@@ -35,6 +35,7 @@ class VirtualGamepad:
 
     def __init__(self, name: str = "VirtualPad") -> None:
         self._device = UInput(_build_capabilities(), name=name)
+        self._pressed: set[str] = set()
 
     def apply(self, event: Event) -> None:
         if isinstance(event, ButtonEvent):
@@ -43,6 +44,10 @@ class VirtualGamepad:
             self._apply_dpad(event)
 
     def _apply_button(self, event: ButtonEvent) -> None:
+        if event.pressed:
+            self._pressed.add(event.name)
+        else:
+            self._pressed.discard(event.name)
         self._device.write(e.EV_KEY, BUTTON_CODES[event.name], int(event.pressed))
         self._device.syn()
 
@@ -50,6 +55,19 @@ class VirtualGamepad:
         self._device.write(e.EV_ABS, e.ABS_HAT0X, event.x)
         self._device.write(e.EV_ABS, e.ABS_HAT0Y, event.y)
         self._device.syn()
+
+    def release_all(self) -> None:
+        """Relache tout ce qui est encore enfonce (utilise a la deconnexion).
+
+        Sans cela, un bouton maintenu au moment de la deconnexion reste
+        enfonce cote systeme.
+        """
+        for name in list(self._pressed):
+            self._device.write(e.EV_KEY, BUTTON_CODES[name], 0)
+        self._device.write(e.EV_ABS, e.ABS_HAT0X, 0)
+        self._device.write(e.EV_ABS, e.ABS_HAT0Y, 0)
+        self._device.syn()
+        self._pressed.clear()
 
     def close(self) -> None:
         self._device.close()

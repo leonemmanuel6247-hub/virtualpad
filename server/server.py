@@ -31,6 +31,8 @@ async def handle_client(websocket, gamepad: VirtualGamepad) -> None:
     except websockets.ConnectionClosed:
         pass
     finally:
+        # Evite qu'un bouton reste enfonce si le client coupe en cours d'appui
+        gamepad.release_all()
         logger.info("Client deconnecte : %s", peer)
 
 

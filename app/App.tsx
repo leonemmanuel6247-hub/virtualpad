@@ -16,12 +16,17 @@ export default function App() {
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [detail, setDetail] = useState<string>("");
   const connectionRef = useRef<GamepadConnection | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
+
+  const isConnected = status === "connected" || status === "connecting";
 
   const handleStatus = (next: ConnectionStatus, message?: string) => {
+    // La reference est liberee des que la connexion se termine, pour permettre
+    // de relancer une connexion meme apres une erreur.
+    if (next === "error" || next === "disconnected") {
+      connectionRef.current = null;
+    }
     setStatus(next);
     setDetail(message ?? "");
-    setIsConnected(next === "connected");
   };
 
   // Ferme la connexion quand l'application est demontee
@@ -29,11 +34,17 @@ export default function App() {
     return () => connectionRef.current?.close();
   }, []);
 
+  const disconnect = () => {
+    const connection = connectionRef.current;
+    connectionRef.current = null;
+    connection?.close();
+    setStatus("disconnected");
+    setDetail("");
+  };
+
   const toggleConnection = () => {
-    if (connectionRef.current) {
-      connectionRef.current.close();
-      connectionRef.current = null;
-      handleStatus("disconnected");
+    if (isConnected) {
+      disconnect();
       return;
     }
     const url = `ws://${host.trim()}:${port.trim()}`;
