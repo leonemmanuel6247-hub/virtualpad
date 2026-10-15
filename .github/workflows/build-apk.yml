@@ -36,11 +36,36 @@ jobs:
       - name: Generate native Android project
         run: npx expo prebuild --platform android --no-install
 
+      - name: Enable ABI splits (small per-architecture APKs)
+        working-directory: app
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          path = pathlib.Path("android/app/build.gradle")
+          text = path.read_text()
+          splits = (
+              "    splits {\n"
+              "        abi {\n"
+              "            reset()\n"
+              "            enable true\n"
+              "            universalApk false\n"
+              '            include "arm64-v8a", "armeabi-v7a"\n'
+              "        }\n"
+              "    }\n\n"
+          )
+          marker = "    buildTypes {\n"
+          if marker not in text:
+              raise SystemExit("buildTypes block not found")
+          text = text.replace(marker, splits + marker, 1)
+          path.write_text(text)
+          print("ABI splits injected")
+          PY
+
       - name: Build release APK
         working-directory: app/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+          ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
