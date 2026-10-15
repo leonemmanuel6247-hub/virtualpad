@@ -14,7 +14,15 @@ export default function App() {
   const [host, setHost] = useState(DEFAULT_HOST);
   const [port, setPort] = useState(DEFAULT_PORT);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
+  const [detail, setDetail] = useState<string>("");
   const connectionRef = useRef<GamepadConnection | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  const handleStatus = (next: ConnectionStatus, message?: string) => {
+    setStatus(next);
+    setDetail(message ?? "");
+    setIsConnected(next === "connected");
+  };
 
   // Ferme la connexion quand l'application est demontee
   useEffect(() => {
@@ -25,11 +33,11 @@ export default function App() {
     if (connectionRef.current) {
       connectionRef.current.close();
       connectionRef.current = null;
-      setStatus("disconnected");
+      handleStatus("disconnected");
       return;
     }
     const url = `ws://${host.trim()}:${port.trim()}`;
-    connectionRef.current = connectToServer(url, setStatus);
+    connectionRef.current = connectToServer(url, handleStatus);
   };
 
   const isEditable = status === "disconnected" || status === "error";
@@ -69,11 +77,13 @@ export default function App() {
         />
         <TouchableOpacity style={styles.connectButton} onPress={toggleConnection}>
           <Text style={styles.connectLabel}>
-            {connectionRef.current ? "Deconnecter" : "Connecter"}
+            {isConnected ? "Deconnecter" : "Connecter"}
           </Text>
         </TouchableOpacity>
         <Text style={styles.status}>{status}</Text>
       </View>
+
+      {detail ? <Text style={styles.detail}>{detail}</Text> : null}
 
       <View style={styles.pad}>
         <View style={styles.side}>
@@ -149,6 +159,10 @@ const styles = StyleSheet.create({
   status: {
     color: "#aaaaaa",
     width: 90,
+  },
+  detail: {
+    color: "#dc322f",
+    marginBottom: 8,
   },
   pad: {
     flex: 1,

@@ -14,7 +14,7 @@ export interface GamepadConnection {
  */
 export function connectToServer(
   url: string,
-  onStatus: (status: ConnectionStatus) => void,
+  onStatus: (status: ConnectionStatus, detail?: string) => void,
 ): GamepadConnection {
   onStatus("connecting");
   const socket = new WebSocket(url);
@@ -24,12 +24,18 @@ export function connectToServer(
     isOpen = true;
     onStatus("connected");
   };
-  socket.onclose = () => {
+  socket.onclose = (event) => {
     isOpen = false;
-    onStatus("disconnected");
+    // Un code non nul ou un serveur injoignable est signale comme une erreur
+    if (event.code === 1000) {
+      onStatus("disconnected");
+    } else {
+      onStatus("error", `connexion fermee (code ${event.code})`);
+    }
   };
-  socket.onerror = () => {
-    onStatus("error");
+  socket.onerror = (event) => {
+    const message = (event as { message?: string }).message;
+    onStatus("error", message ?? "serveur injoignable");
   };
 
   return {
