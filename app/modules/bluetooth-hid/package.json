@@ -1,0 +1,7 @@
+{
+  "name": "bluetooth-hid",
+  "version": "0.1.0",
+  "description": "Manette Bluetooth HID pour VirtualPad",
+  "main": "index.ts",
+  "private": true
+}

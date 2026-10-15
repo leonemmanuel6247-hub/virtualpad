@@ -2,118 +2,87 @@ import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
-import { ConnectionStatus, GamepadConnection, connectToServer } from "./src/connection";
 import { DpadButton } from "./src/components/DpadButton";
 import { GamepadButton } from "./src/components/GamepadButton";
-import { HostStatus, HostedServer, startHostServer } from "./src/hostServer";
 import { getHistory, log, subscribe } from "./src/logger";
-import { ButtonName, DpadValue, buttonMessage, dpadMessage } from "./src/protocol";
+import { ButtonName, ControlName, DpadDirection, encodeControl } from "./src/protocol";
+import { sendBluetooth, startBluetooth, stopBluetooth } from "./src/bluetooth";
+import { Transport, TransportStatus, startClientTransport, startHostTransport } from "./src/transport";
 
-type Mode = "host" | "connect";
+type Mode = "host" | "client" | "bluetooth";
 
 const DEFAULT_HOST = "192.168.1.10";
 const DEFAULT_PORT = "8765";
 
-// Le mode "host" est le seul fiable sur ChromeOS : le PC se connecte en
-// sortant vers le telephone, ce qui contourne le filtrage des connexions
-// entrantes de ChromeOS.
 export default function App() {
   const [mode, setMode] = useState<Mode>("host");
   const [host, setHost] = useState(DEFAULT_HOST);
   const [port, setPort] = useState(DEFAULT_PORT);
-  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
-  const [hostStatus, setHostStatus] = useState<HostStatus>("disconnected");
+  const [status, setStatus] = useState<TransportStatus>("disconnected");
   const [detail, setDetail] = useState<string>("");
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
-  const connectionRef = useRef<GamepadConnection | null>(null);
-  const serverRef = useRef<HostedServer | null>(null);
+  const transportRef = useRef<Transport | null>(null);
 
-  // En mode host, le telephone est pret des que le PC est connecte.
-  const activeStatus = mode === "host" ? hostStatus : status;
-  const isRunning = activeStatus === "connected" || activeStatus === "connecting";
+  const isRunning = status === "connected" || status === "connecting";
 
-  const handleStatus = (next: ConnectionStatus, message?: string) => {
-    // La reference est liberee des que la connexion se termine, pour permettre
-    // de relancer une connexion meme apres une erreur.
+  const handleStatus = (next: TransportStatus, message?: string) => {
+    // La reference est liberee des que la session se termine
     if (next === "error" || next === "disconnected") {
-      connectionRef.current = null;
+      transportRef.current = null;
     }
     setStatus(next);
     setDetail(message ?? "");
   };
 
-  const handleHostStatus = (next: HostStatus, message?: string) => {
-    setHostStatus(next);
-    setDetail(message ?? "");
-  };
-
-  // Suit le journal pour l'afficher a l'ecran
   useEffect(() => {
     setLogs(getHistory());
     return subscribe((line) => setLogs((previous) => [...previous, line]));
   }, []);
 
-  // Ferme tout quand l'application est demontee
   useEffect(() => {
-    return () => {
-      connectionRef.current?.close();
-      serverRef.current?.close();
-    };
+    return () => transportRef.current?.close();
   }, []);
 
   const stop = () => {
-    if (mode === "host") {
-      serverRef.current?.close();
-      serverRef.current = null;
-      setHostStatus("disconnected");
+    if (mode === "bluetooth") {
+      stopBluetooth();
     } else {
-      const connection = connectionRef.current;
-      connectionRef.current = null;
-      connection?.close();
-      setStatus("disconnected");
+      const transport = transportRef.current;
+      transportRef.current = null;
+      transport?.close();
     }
+    setStatus("disconnected");
     setDetail("");
   };
 
   const start = () => {
     if (mode === "host") {
-      serverRef.current = startHostServer(port.trim(), handleHostStatus);
+      transportRef.current = startHostTransport(port.trim(), handleStatus);
+    } else if (mode === "client") {
+      transportRef.current = startClientTransport(host.trim(), port.trim(), handleStatus);
     } else {
-      const url = `ws://${host.trim()}:${port.trim()}`;
-      connectionRef.current = connectToServer(url, handleStatus);
+      startBluetooth();
+      setStatus("connecting");
+      setDetail("apparie la manette depuis le Chromebook");
     }
   };
 
-  const toggle = () => {
-    if (isRunning) {
-      stop();
-    } else {
-      start();
-    }
-  };
+  const toggle = () => (isRunning ? stop() : start());
 
   const isEditable = !isRunning;
 
-  const sendButton = (name: ButtonName, pressed: boolean) => {
-    log(`bouton ${name} ${pressed ? "appuye" : "relache"}`);
-    const message = buttonMessage(name, pressed);
-    if (mode === "host") {
-      serverRef.current?.send(message);
+  const send = (name: ControlName, pressed: boolean) => {
+    log(`${name} ${pressed ? "appuye" : "relache"}`);
+    if (mode === "bluetooth") {
+      sendBluetooth(name, pressed);
     } else {
-      connectionRef.current?.send(message);
+      transportRef.current?.send(encodeControl(name, pressed));
     }
   };
 
-  const sendDpad = (x: DpadValue, y: DpadValue) => {
-    log(`dpad (${x}, ${y})`);
-    const message = dpadMessage(x, y);
-    if (mode === "host") {
-      serverRef.current?.send(message);
-    } else {
-      connectionRef.current?.send(message);
-    }
-  };
+  const sendButton = (name: ButtonName, pressed: boolean) => send(name, pressed);
+  const sendDpad = (direction: DpadDirection, pressed: boolean) => send(direction, pressed);
 
   return (
     <View style={styles.container}>
@@ -121,26 +90,32 @@ export default function App() {
 
       <View style={styles.modeBar}>
         <TouchableOpacity
+          style={[styles.modeButton, mode === "bluetooth" && styles.modeButtonActive]}
+          onPress={() => !isRunning && setMode("bluetooth")}
+        >
+          <Text style={styles.modeLabel}>Bluetooth</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[styles.modeButton, mode === "host" && styles.modeButtonActive]}
           onPress={() => !isRunning && setMode("host")}
         >
-          <Text style={styles.modeLabel}>Heberger (recommande)</Text>
+          <Text style={styles.modeLabel}>Wi-Fi serveur</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.modeButton, mode === "connect" && styles.modeButtonActive]}
-          onPress={() => !isRunning && setMode("connect")}
+          style={[styles.modeButton, mode === "client" && styles.modeButtonActive]}
+          onPress={() => !isRunning && setMode("client")}
         >
-          <Text style={styles.modeLabel}>Se connecter</Text>
+          <Text style={styles.modeLabel}>Wi-Fi client</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.topBar}>
-        {mode === "connect" ? (
+        {mode === "client" ? (
           <TextInput
             style={styles.hostInput}
             value={host}
             onChangeText={setHost}
-            placeholder="Adresse IP du PC"
+            placeholder="Adresse IP du serveur"
             placeholderTextColor="#666666"
             keyboardType="numbers-and-punctuation"
             autoCapitalize="none"
@@ -159,10 +134,10 @@ export default function App() {
         />
         <TouchableOpacity style={styles.connectButton} onPress={toggle}>
           <Text style={styles.connectLabel}>
-            {isRunning ? "Arreter" : mode === "host" ? "Demarrer" : "Connecter"}
+            {isRunning ? "Arreter" : mode === "bluetooth" ? "Activer" : mode === "host" ? "Demarrer" : "Connecter"}
           </Text>
         </TouchableOpacity>
-        <Text style={styles.status}>{activeStatus}</Text>
+        <Text style={styles.status}>{status}</Text>
         <TouchableOpacity onPress={() => setShowLogs((v) => !v)} style={styles.logToggle}>
           <Text style={styles.logToggleLabel}>{showLogs ? "Masquer" : "Journal"}</Text>
         </TouchableOpacity>
@@ -188,8 +163,8 @@ export default function App() {
         <View style={styles.side}>
           <DpadButton onChange={sendDpad} />
           <View style={styles.centerRow}>
-            <GamepadButton label="SEL" name="SELECT" onChange={sendButton} size={48} color="#555" />
-            <GamepadButton label="STA" name="START" onChange={sendButton} size={48} color="#555" />
+            <GamepadButton label="SEL" name="SELECT" onChange={sendButton} size={48} color="#555555" />
+            <GamepadButton label="STA" name="START" onChange={sendButton} size={48} color="#555555" />
           </View>
         </View>
 

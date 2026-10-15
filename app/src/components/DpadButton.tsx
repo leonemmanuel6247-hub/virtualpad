@@ -1,32 +1,29 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import type { DpadValue } from "../protocol";
+import type { DpadDirection } from "../protocol";
 
 interface Props {
-  onChange: (x: DpadValue, y: DpadValue) => void;
+  onChange: (direction: DpadDirection, pressed: boolean) => void;
 }
 
 /**
- * Croix directionnelle : chaque case envoie la direction tant qu'elle est maintenue.
- * Le relachement envoie (0, 0). Les diagonales sont obtenues en maintenant deux cases.
+ * Croix directionnelle. Chaque case envoie sa direction a l'appui et au relachement.
+ * Maintenir deux cases en diagonale fonctionne naturellement.
  */
 export function DpadButton({ onChange }: Props) {
-  const press = (x: DpadValue, y: DpadValue) => () => onChange(x, y);
-  const release = () => onChange(0, 0);
-
   return (
     <View style={styles.grid}>
       <View style={styles.row}>
-        <Arm label="^" onIn={press(0, -1)} onOut={release} />
+        <Arm label="^" direction="UP" onChange={onChange} />
       </View>
       <View style={styles.row}>
-        <Arm label="<" onIn={press(-1, 0)} onOut={release} />
+        <Arm label="<" direction="LEFT" onChange={onChange} />
         <View style={styles.center} />
-        <Arm label=">" onIn={press(1, 0)} onOut={release} />
+        <Arm label=">" direction="RIGHT" onChange={onChange} />
       </View>
       <View style={styles.row}>
-        <Arm label="v" onIn={press(0, 1)} onOut={release} />
+        <Arm label="v" direction="DOWN" onChange={onChange} />
       </View>
     </View>
   );
@@ -34,17 +31,17 @@ export function DpadButton({ onChange }: Props) {
 
 interface ArmProps {
   label: string;
-  onIn: () => void;
-  onOut: () => void;
+  direction: DpadDirection;
+  onChange: (direction: DpadDirection, pressed: boolean) => void;
 }
 
-function Arm({ label, onIn, onOut }: ArmProps) {
+function Arm({ label, direction, onChange }: ArmProps) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Direction ${label}`}
-      onPressIn={onIn}
-      onPressOut={onOut}
+      onPressIn={() => onChange(direction, true)}
+      onPressOut={() => onChange(direction, false)}
       style={({ pressed }) => [styles.arm, pressed && styles.armPressed]}
     >
       <Text style={styles.armLabel}>{label}</Text>

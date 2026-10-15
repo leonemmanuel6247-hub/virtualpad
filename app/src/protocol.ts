@@ -1,27 +1,13 @@
-// Messages envoyes au serveur Python (voir server/protocol.py)
+// Protocole texte minimal, une ligne par appui : "<NOM> <etat>\n"
+// Exemples : "A 1\n" (appui), "A 0\n" (relache), "UP 1\n", "DOWN 0\n"
+//
+// Ce format est volontairement simple pour etre lu par un petit script bash
+// cote PC (lecture ligne par ligne via /dev/tcp).
 
 export type ButtonName = "A" | "B" | "X" | "Y" | "START" | "SELECT" | "L1" | "R1";
+export type DpadDirection = "UP" | "DOWN" | "LEFT" | "RIGHT";
+export type ControlName = ButtonName | DpadDirection;
 
-export type DpadValue = -1 | 0 | 1;
-
-export interface ButtonMessage {
-  type: "button";
-  name: ButtonName;
-  pressed: boolean;
-}
-
-export interface DpadMessage {
-  type: "dpad";
-  x: DpadValue;
-  y: DpadValue;
-}
-
-export type GamepadMessage = ButtonMessage | DpadMessage;
-
-export function buttonMessage(name: ButtonName, pressed: boolean): ButtonMessage {
-  return { type: "button", name, pressed };
-}
-
-export function dpadMessage(x: DpadValue, y: DpadValue): DpadMessage {
-  return { type: "dpad", x, y };
+export function encodeControl(name: ControlName, pressed: boolean): string {
+  return `${name} ${pressed ? 1 : 0}\n`;
 }
