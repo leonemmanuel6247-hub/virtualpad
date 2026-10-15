@@ -6,7 +6,7 @@ import { DpadButton } from "./src/components/DpadButton";
 import { GamepadButton } from "./src/components/GamepadButton";
 import { getHistory, log, subscribe } from "./src/logger";
 import { ButtonName, ControlName, DpadDirection, encodeControl } from "./src/protocol";
-import { sendBluetooth, startBluetooth, stopBluetooth } from "./src/bluetooth";
+import { bluetoothConnected, sendBluetooth, startBluetooth, stopBluetooth } from "./src/bluetooth";
 import { Transport, TransportStatus, startClientTransport, startHostTransport } from "./src/transport";
 
 type Mode = "host" | "client" | "bluetooth";
@@ -43,6 +43,19 @@ export default function App() {
   useEffect(() => {
     return () => transportRef.current?.close();
   }, []);
+
+  // En Bluetooth, l'appairage se fait cote Chromebook : on interroge l'etat
+  // pour prevenir l'utilisateur des que la manette est connectee.
+  useEffect(() => {
+    if (mode !== "bluetooth" || !isRunning) return;
+    const timer = setInterval(() => {
+      if (bluetoothConnected()) {
+        setStatus("connected");
+        setDetail("manette connectee au Chromebook");
+      }
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [mode, isRunning]);
 
   const stop = () => {
     if (mode === "bluetooth") {
