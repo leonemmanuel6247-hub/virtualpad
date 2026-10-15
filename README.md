@@ -13,15 +13,38 @@ app/       Application React Native (Expo)
 
 ## Principe
 
-La manette virtuelle doit etre creee sur un PC Linux, qui fournit `/dev/uinput`
-(une application Android ne peut pas injecter de manette sur le Chromebook).
+L'objectif : jouer a PPSSPP sur le Chromebook avec le telephone comme manette.
 
-Sur ChromeOS, les connexions **entrantes** vers le chroot sont filtrees. On inverse
-donc le sens : **le telephone heberge, le PC se connecte en sortant**. Cela fonctionne
-sur Wi-Fi, sans USB ni adb.
+Le mode **Bluetooth** est le seul qui donne une vraie manette a PPSSPP sans aucune
+application ni terminal cote Chromebook : le telephone s'annonce comme manette
+Bluetooth (HID), le Chromebook le voit comme un vrai controleur, et PPSSPP le lit
+directement. Aucune connexion internet n'est necessaire.
 
-- Mode `host` : le telephone ouvre un serveur TCP (recommande sur ChromeOS).
-- Mode `connect` : le telephone se connecte a un serveur WebSocket (reseau ouvert).
+Les modes Wi-Fi servent quand on veut passer par un PC Linux avec `/dev/uinput`.
+
+## Mode Bluetooth (recommande, sans terminal)
+
+1. Installer l'APK sur le telephone.
+2. Dans l'application, choisir **Bluetooth**, puis **Activer**. Accepter les
+   permissions demandees.
+3. Sur le Chromebook : Parametres > Bluetooth, appairer l'appareil nomme
+   **VirtualPad**. C'est l'appairage qui est fait ici (Android ne permet pas a
+   l'application de le faire seule).
+4. Dans PPSSPP : mapper les boutons sur la manette. Les appuis fonctionnent alors
+   immediatement.
+
+Aucun script, aucun terminal, aucun Python cote Chromebook.
+
+## Modes Wi-Fi (PC Linux requis)
+
+Sur ChromeOS, les connexions entrantes vers un chroot sont filtrees. On inverse donc
+le sens : le telephone heberge, le PC se connecte en sortant.
+
+- Mode **Wi-Fi serveur** : le telephone ouvre un serveur TCP.
+- Mode **Wi-Fi client** : le telephone se connecte a un serveur ailleurs.
+
+Le PC Linux relaie en creant une manette `uinput`. Le script est fourni dans
+`chromebook/client.sh`.
 
 ## Serveur (PC Linux)
 
