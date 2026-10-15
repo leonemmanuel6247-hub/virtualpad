@@ -1,10 +1,11 @@
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { ConnectionStatus, GamepadConnection, connectToServer } from "./src/connection";
 import { DpadButton } from "./src/components/DpadButton";
 import { GamepadButton } from "./src/components/GamepadButton";
+import { getHistory, log, subscribe } from "./src/logger";
 import { ButtonName, DpadValue, buttonMessage, dpadMessage } from "./src/protocol";
 
 const DEFAULT_HOST = "192.168.1.10";
@@ -15,6 +16,8 @@ export default function App() {
   const [port, setPort] = useState(DEFAULT_PORT);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const [detail, setDetail] = useState<string>("");
+  const [logs, setLogs] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
   const connectionRef = useRef<GamepadConnection | null>(null);
 
   const isConnected = status === "connected" || status === "connecting";
@@ -28,6 +31,12 @@ export default function App() {
     setStatus(next);
     setDetail(message ?? "");
   };
+
+  // Suit le journal pour l'afficher a l'ecran
+  useEffect(() => {
+    setLogs(getHistory());
+    return subscribe((line) => setLogs((previous) => [...previous, line]));
+  }, []);
 
   // Ferme la connexion quand l'application est demontee
   useEffect(() => {
@@ -54,10 +63,12 @@ export default function App() {
   const isEditable = status === "disconnected" || status === "error";
 
   const sendButton = (name: ButtonName, pressed: boolean) => {
+    log(`bouton ${name} ${pressed ? "appuye" : "relache"}`);
     connectionRef.current?.send(buttonMessage(name, pressed));
   };
 
   const sendDpad = (x: DpadValue, y: DpadValue) => {
+    log(`dpad (${x}, ${y})`);
     connectionRef.current?.send(dpadMessage(x, y));
   };
 
@@ -92,9 +103,26 @@ export default function App() {
           </Text>
         </TouchableOpacity>
         <Text style={styles.status}>{status}</Text>
+        <TouchableOpacity onPress={() => setShowLogs((v) => !v)} style={styles.logToggle}>
+          <Text style={styles.logToggleLabel}>{showLogs ? "Masquer" : "Journal"}</Text>
+        </TouchableOpacity>
       </View>
 
       {detail ? <Text style={styles.detail}>{detail}</Text> : null}
+
+      {showLogs ? (
+        <ScrollView style={styles.logPanel}>
+          {logs.length === 0 ? (
+            <Text style={styles.logLine}>Aucun evenement</Text>
+          ) : (
+            logs.map((line, index) => (
+              <Text key={index} style={styles.logLine}>
+                {line}
+              </Text>
+            ))
+          )}
+        </ScrollView>
+      ) : null}
 
       <View style={styles.pad}>
         <View style={styles.side}>
@@ -171,9 +199,30 @@ const styles = StyleSheet.create({
     color: "#aaaaaa",
     width: 90,
   },
+  logToggle: {
+    backgroundColor: "#222222",
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  logToggleLabel: {
+    color: "#ffffff",
+  },
   detail: {
     color: "#dc322f",
     marginBottom: 8,
+  },
+  logPanel: {
+    maxHeight: 120,
+    backgroundColor: "#000000",
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 8,
+  },
+  logLine: {
+    color: "#8ab4f8",
+    fontSize: 11,
+    fontFamily: "monospace",
   },
   pad: {
     flex: 1,

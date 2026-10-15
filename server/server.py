@@ -21,6 +21,7 @@ async def handle_client(websocket, gamepad: VirtualGamepad) -> None:
     logger.info("Client connecte : %s", peer)
     try:
         async for raw in websocket:
+            logger.debug("Message recu (%s) : %s", peer, raw)
             try:
                 event = parse_message(raw)
             except ProtocolError as exc:

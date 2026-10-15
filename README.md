@@ -44,6 +44,26 @@ Boutons : A, B, X, Y, START, SELECT, L1, R1 et la croix directionnelle.
 sudo evtest   # choisir "VirtualPad"
 ```
 
+## Diagnostic
+
+Le serveur affiche chaque etape. Pour voir les messages recus, relancer avec `--log-level DEBUG` :
+
+```bash
+python3 server.py --port 8765 --log-level DEBUG
+```
+
+L'application journalise tout sous le tag `VirtualPad`. Deux facons de le lire :
+
+1. Bouton **Journal** dans l'application (affiche les evenements a l'ecran).
+2. Depuis le PC, via USB :
+
+```bash
+adb logcat ReactNativeJS:V *:S | grep VirtualPad
+```
+
+Le journal indique l'URL tentee, l'ouverture ou l'echec de la socket, le code de
+fermeture, et chaque appui envoye.
+
 ## Tests du protocole
 
 ```bash
