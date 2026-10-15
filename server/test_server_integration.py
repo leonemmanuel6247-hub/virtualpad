@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 import websockets
 
+import client
 import server
 from protocol import parse_message
 
@@ -31,9 +32,12 @@ class FakeGamepad:
         self.released += 1
 
 
-class ServerIntegrationTests(unittest.TestCase):
+class AsyncTestCase(unittest.TestCase):
     def _run(self, coro):
         return asyncio.run(coro)
+
+
+class ServerIntegrationTests(AsyncTestCase):
 
     def test_les_messages_valides_pilotent_la_manette(self):
         async def scenario():
@@ -80,6 +84,63 @@ class ServerIntegrationTests(unittest.TestCase):
         gamepad, reply = self._run(scenario())
         self.assertIn("error", reply)
         self.assertEqual(len(gamepad.events), 1)
+
+
+class OutgoingClientTests(AsyncTestCase):
+    """Mode 'connect' : le PC se connecte en sortant vers le telephone."""
+
+    def test_recoit_les_lignes_json_et_pilote_la_manette(self):
+        async def scenario():
+            gamepad = FakeGamepad()
+            received = asyncio.Event()
+
+            async def fake_phone(reader, writer):
+                # Le faux telephone envoie deux messages, un par ligne
+                writer.write(b'{"type": "button", "name": "A", "pressed": true}\n')
+                writer.write(b'{"type": "dpad", "x": -1, "y": 0}\n')
+                await writer.drain()
+                await asyncio.sleep(0.2)
+                writer.close()
+
+            tcp_server = await asyncio.start_server(fake_phone, "127.0.0.1", 0)
+            port = tcp_server.sockets[0].getsockname()[1]
+
+            task = asyncio.create_task(client._handle_connection("127.0.0.1", port, gamepad))
+            await asyncio.wait_for(task, timeout=3)
+            tcp_server.close()
+            await tcp_server.wait_closed()
+            return gamepad
+
+        gamepad = self._run(scenario())
+        self.assertEqual(len(gamepad.events), 2)
+        self.assertEqual(gamepad.events[0].name, "A")
+        self.assertTrue(gamepad.events[0].pressed)
+        self.assertEqual((gamepad.events[1].x, gamepad.events[1].y), (-1, 0))
+        # La fermeture de la connexion relache les boutons
+        self.assertEqual(gamepad.released, 1)
+
+    def test_ignore_les_lignes_invalides(self):
+        async def scenario():
+            gamepad = FakeGamepad()
+
+            async def fake_phone(reader, writer):
+                writer.write(b"ligne invalide\n")
+                writer.write(b'{"type": "button", "name": "B", "pressed": false}\n')
+                await writer.drain()
+                await asyncio.sleep(0.2)
+                writer.close()
+
+            tcp_server = await asyncio.start_server(fake_phone, "127.0.0.1", 0)
+            port = tcp_server.sockets[0].getsockname()[1]
+            task = asyncio.create_task(client._handle_connection("127.0.0.1", port, gamepad))
+            await asyncio.wait_for(task, timeout=3)
+            tcp_server.close()
+            await tcp_server.wait_closed()
+            return gamepad
+
+        gamepad = self._run(scenario())
+        self.assertEqual(len(gamepad.events), 1)
+        self.assertEqual(gamepad.events[0].name, "B")
 
 
 if __name__ == "__main__":

@@ -5,22 +5,33 @@ import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 
 import { ConnectionStatus, GamepadConnection, connectToServer } from "./src/connection";
 import { DpadButton } from "./src/components/DpadButton";
 import { GamepadButton } from "./src/components/GamepadButton";
+import { HostStatus, HostedServer, startHostServer } from "./src/hostServer";
 import { getHistory, log, subscribe } from "./src/logger";
 import { ButtonName, DpadValue, buttonMessage, dpadMessage } from "./src/protocol";
+
+type Mode = "host" | "connect";
 
 const DEFAULT_HOST = "192.168.1.10";
 const DEFAULT_PORT = "8765";
 
+// Le mode "host" est le seul fiable sur ChromeOS : le PC se connecte en
+// sortant vers le telephone, ce qui contourne le filtrage des connexions
+// entrantes de ChromeOS.
 export default function App() {
+  const [mode, setMode] = useState<Mode>("host");
   const [host, setHost] = useState(DEFAULT_HOST);
   const [port, setPort] = useState(DEFAULT_PORT);
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
+  const [hostStatus, setHostStatus] = useState<HostStatus>("disconnected");
   const [detail, setDetail] = useState<string>("");
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
   const connectionRef = useRef<GamepadConnection | null>(null);
+  const serverRef = useRef<HostedServer | null>(null);
 
-  const isConnected = status === "connected" || status === "connecting";
+  // En mode host, le telephone est pret des que le PC est connecte.
+  const activeStatus = mode === "host" ? hostStatus : status;
+  const isRunning = activeStatus === "connected" || activeStatus === "connecting";
 
   const handleStatus = (next: ConnectionStatus, message?: string) => {
     // La reference est liberee des que la connexion se termine, pour permettre
@@ -32,62 +43,111 @@ export default function App() {
     setDetail(message ?? "");
   };
 
+  const handleHostStatus = (next: HostStatus, message?: string) => {
+    setHostStatus(next);
+    setDetail(message ?? "");
+  };
+
   // Suit le journal pour l'afficher a l'ecran
   useEffect(() => {
     setLogs(getHistory());
     return subscribe((line) => setLogs((previous) => [...previous, line]));
   }, []);
 
-  // Ferme la connexion quand l'application est demontee
+  // Ferme tout quand l'application est demontee
   useEffect(() => {
-    return () => connectionRef.current?.close();
+    return () => {
+      connectionRef.current?.close();
+      serverRef.current?.close();
+    };
   }, []);
 
-  const disconnect = () => {
-    const connection = connectionRef.current;
-    connectionRef.current = null;
-    connection?.close();
-    setStatus("disconnected");
+  const stop = () => {
+    if (mode === "host") {
+      serverRef.current?.close();
+      serverRef.current = null;
+      setHostStatus("disconnected");
+    } else {
+      const connection = connectionRef.current;
+      connectionRef.current = null;
+      connection?.close();
+      setStatus("disconnected");
+    }
     setDetail("");
   };
 
-  const toggleConnection = () => {
-    if (isConnected) {
-      disconnect();
-      return;
+  const start = () => {
+    if (mode === "host") {
+      serverRef.current = startHostServer(port.trim(), handleHostStatus);
+    } else {
+      const url = `ws://${host.trim()}:${port.trim()}`;
+      connectionRef.current = connectToServer(url, handleStatus);
     }
-    const url = `ws://${host.trim()}:${port.trim()}`;
-    connectionRef.current = connectToServer(url, handleStatus);
   };
 
-  const isEditable = status === "disconnected" || status === "error";
+  const toggle = () => {
+    if (isRunning) {
+      stop();
+    } else {
+      start();
+    }
+  };
+
+  const isEditable = !isRunning;
 
   const sendButton = (name: ButtonName, pressed: boolean) => {
     log(`bouton ${name} ${pressed ? "appuye" : "relache"}`);
-    connectionRef.current?.send(buttonMessage(name, pressed));
+    const message = buttonMessage(name, pressed);
+    if (mode === "host") {
+      serverRef.current?.send(message);
+    } else {
+      connectionRef.current?.send(message);
+    }
   };
 
   const sendDpad = (x: DpadValue, y: DpadValue) => {
     log(`dpad (${x}, ${y})`);
-    connectionRef.current?.send(dpadMessage(x, y));
+    const message = dpadMessage(x, y);
+    if (mode === "host") {
+      serverRef.current?.send(message);
+    } else {
+      connectionRef.current?.send(message);
+    }
   };
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
+      <View style={styles.modeBar}>
+        <TouchableOpacity
+          style={[styles.modeButton, mode === "host" && styles.modeButtonActive]}
+          onPress={() => !isRunning && setMode("host")}
+        >
+          <Text style={styles.modeLabel}>Heberger (recommande)</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeButton, mode === "connect" && styles.modeButtonActive]}
+          onPress={() => !isRunning && setMode("connect")}
+        >
+          <Text style={styles.modeLabel}>Se connecter</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.topBar}>
-        <TextInput
-          style={styles.hostInput}
-          value={host}
-          onChangeText={setHost}
-          placeholder="Adresse IP"
-          placeholderTextColor="#666666"
-          keyboardType="numbers-and-punctuation"
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={isEditable}
-        />
+        {mode === "connect" ? (
+          <TextInput
+            style={styles.hostInput}
+            value={host}
+            onChangeText={setHost}
+            placeholder="Adresse IP du PC"
+            placeholderTextColor="#666666"
+            keyboardType="numbers-and-punctuation"
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={isEditable}
+          />
+        ) : null}
         <TextInput
           style={styles.portInput}
           value={port}
@@ -97,12 +157,12 @@ export default function App() {
           keyboardType="number-pad"
           editable={isEditable}
         />
-        <TouchableOpacity style={styles.connectButton} onPress={toggleConnection}>
+        <TouchableOpacity style={styles.connectButton} onPress={toggle}>
           <Text style={styles.connectLabel}>
-            {isConnected ? "Deconnecter" : "Connecter"}
+            {isRunning ? "Arreter" : mode === "host" ? "Demarrer" : "Connecter"}
           </Text>
         </TouchableOpacity>
-        <Text style={styles.status}>{status}</Text>
+        <Text style={styles.status}>{activeStatus}</Text>
         <TouchableOpacity onPress={() => setShowLogs((v) => !v)} style={styles.logToggle}>
           <Text style={styles.logToggleLabel}>{showLogs ? "Masquer" : "Journal"}</Text>
         </TouchableOpacity>
@@ -162,6 +222,25 @@ const styles = StyleSheet.create({
     backgroundColor: "#111111",
     paddingHorizontal: 16,
     paddingVertical: 8,
+  },
+  modeBar: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8,
+  },
+  modeButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: "center",
+    borderRadius: 6,
+    backgroundColor: "#222222",
+  },
+  modeButtonActive: {
+    backgroundColor: "#2b4a6f",
+  },
+  modeLabel: {
+    color: "#ffffff",
+    fontWeight: "bold",
   },
   topBar: {
     flexDirection: "row",
